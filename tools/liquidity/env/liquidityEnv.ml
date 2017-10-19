@@ -236,6 +236,9 @@ let (+) (x,unit) (y,_) = Z.add x y, unit
 let (-) (x,unit) (y,_) = Z.sub x y, unit
 let (@) = (^)
 
+let abs = function
+  | x, Int -> Z.abs x, Int
+  | _ -> raise (Invalid_argument "abs")
 
 let ediv x y =
   try

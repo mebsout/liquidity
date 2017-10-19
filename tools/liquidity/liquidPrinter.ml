@@ -560,6 +560,17 @@ module Liquid = struct
        Printf.bprintf b "\n%s| Some %s ->\n" indent2 var;
        bprint_code ~debug b indent4 ifsome;
        ()
+    | MatchNat (arg, _loc, p, ifplus, m, ifminus) ->
+       let indent2 = indent ^ "  " in
+       let indent4 = indent2 ^ "  " in
+       Printf.bprintf b "\n%smatch%%nat " indent;
+       bprint_code ~debug b indent2 arg;
+       Printf.bprintf b " with\n";
+       Printf.bprintf b "\n%s| Plus %s ->\n" indent2 p;
+       bprint_code ~debug b indent4 ifplus;
+       Printf.bprintf b "\n%s| Minus %s ->\n" indent2 m;
+       bprint_code ~debug b indent4 ifminus;
+       ()
     | MatchList (arg, _loc, head_name, tail_name, ifcons, ifnil) ->
        let indent2 = indent ^ "  " in
        let indent4 = indent2 ^ "  " in
@@ -681,6 +692,8 @@ let string_of_node node =
   | N_IF_CONS _ -> "N_IF_CONS"
   | N_IF_LEFT _ -> "N_IF_LEFT"
   | N_IF_RIGHT _ -> "N_IF_RIGHT"
+  | N_IF_PLUS _ -> "N_IF_PLUS"
+  | N_IF_MINUS _ -> "N_IF_MINUS"
   | N_TRANSFER _ -> "N_TRANSFER"
   | N_TRANSFER_RESULT int -> Printf.sprintf "N_TRANSFER_RESULT %d" int
   | N_CONST (ty, cst) -> "N_CONST " ^ Michelson.string_of_const cst
@@ -700,3 +713,4 @@ let string_of_node node =
   | N_SOURCE _ -> "N_SOURCE"
   | N_LEFT _ -> "N_LEFT"
   | N_RIGHT _ -> "N_RIGHT"
+  | N_ABS -> "N_ABS"

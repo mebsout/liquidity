@@ -360,6 +360,11 @@ type 'ty exp = {
                     * location
                     * (pattern * 'ty exp) list
 
+  | MatchNat of 'ty exp  (* argument *)
+                * location
+                * string * 'ty exp (* ifplus *)
+                * string * 'ty exp (* ifminus *)
+
 type syntax_exp = unit exp
 type typed_exp = datatype exp
 type live_exp = (datatype * datatype StringMap.t) exp
@@ -533,6 +538,8 @@ type node = {
    | N_IF_CONS of node * node * node
    | N_IF_LEFT of node * node
    | N_IF_RIGHT of node * node
+   | N_IF_PLUS of node * node
+   | N_IF_MINUS of node * node
    | N_TRANSFER of node * node
    | N_TRANSFER_RESULT of int
    | N_CONST of datatype * const
@@ -553,6 +560,7 @@ type node = {
    | N_LEFT of datatype
    | N_RIGHT of datatype
    | N_SOURCE of datatype * datatype
+   | N_ABS
 
 type node_exp = node * node
 
