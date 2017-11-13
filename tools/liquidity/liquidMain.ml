@@ -52,7 +52,7 @@ let compile_liquid_file filename =
     LiquidEncode.encode_contract ~warnings:true env typed_ast in
   if !verbosity>0 then
     FileString.write_file (filename ^ ".encoded")
-      (LiquidPrinter.Liquid.string_of_contract
+      (LiquidPrinter.Liquid.string_of_encoded_contract
          encoded_ast);
   if !arg_typeonly then exit 0;
 

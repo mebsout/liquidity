@@ -496,6 +496,10 @@ let rec typecheck env ( exp : syntax_exp ) : typed_exp =
     check_specs_allowed env loc;
     let e1 = typecheck_expected "logic" env Tbool e1 in
     let e2 = typecheck_expected "logic" env Tbool e2 in
+    if e1.transfer || e2.transfer then
+       error loc "transfer not allowed in specification";
+    if e1.fail || e2.fail then
+      error loc "expressions in specifications cannot fail";
     let desc = match exp.desc with
       | And _ -> And (loc, e1, e2)
       | Or _ -> Or (loc, e1, e2)
@@ -512,6 +516,10 @@ let rec typecheck env ( exp : syntax_exp ) : typed_exp =
       ) env qvs
     in
     let e = typecheck_expected "logic" env Tbool e in
+    if e.transfer then
+      error loc "transfer not allowed in specification";
+    if e.fail then
+      error loc "expressions in specifications cannot fail";
     let desc = match exp.desc with
       | Forall _ -> Forall (loc, qvs, e)
       | Exists _ -> Exists (loc, qvs, e)
@@ -972,10 +980,27 @@ and typecheck_apply env prim loc args =
   mk (Apply (prim, loc, args)) ty
 
 let typecheck_spec env env_ensures = function
-  | Requires f -> Requires (typecheck env f)
+  | Requires f ->
+    let f = typecheck env f in
+    if f.transfer then
+      error (loc_exp env f) "transfer not allowed in specification";
+    if f.fail then
+      error (loc_exp env f) "expressions in specifications cannot fail";
+    Requires f
   | Ensures f ->
-    Ensures (typecheck env_ensures f)
-  | Fails f -> Fails (typecheck env f)
+    let f = typecheck env_ensures f in
+    if f.transfer then
+      error (loc_exp env_ensures f) "transfer not allowed in specification";
+    if f.fail then
+      error (loc_exp env f) "expressions in specifications cannot fail";
+    Ensures f
+  | Fails f ->
+    let f = typecheck env f in
+    if f.transfer then
+      error (loc_exp env f) "transfer not allowed in specification";
+    if f.fail then
+      error (loc_exp env f) "expressions in specifications cannot fail";
+    Fails f
 
 let typecheck_specs env env_ensures l =
   let env = { env with allow_spec = true } in

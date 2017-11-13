@@ -900,6 +900,8 @@ module Liquid = struct
     to_string (bprint_code_types ~debug) code
   let string_of_contract ?(debug=false) cmd =
     to_string (bprint_contract bprint_code (fun _ ~debug _ _ _ -> ()) ~debug) cmd
+  let string_of_encoded_contract ?(debug=false) cmd =
+    to_string (bprint_contract bprint_code bprint_specs ~debug) cmd
   let string_of_contract_types ?(debug=false) cmd =
     to_string (bprint_contract bprint_code_types bprint_specs ~debug) cmd
 

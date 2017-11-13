@@ -18,7 +18,7 @@ let%entry main
 
   (* Check if auction has ended *)
   if Current.time () > storage.auction_end then Current.fail ();
-  
+
   let new_bid = Current.amount () in
   let new_bidder = parameter in
   (* Check if new bid is higher that the last *)
