@@ -809,6 +809,34 @@ let rec encode env ( exp : typed_exp ) : encoded_exp =
     in
     mk (MatchVariant (arg, loc, cases)) exp.ty
 
+  | And (loc, e1, e2) | Or (loc, e1, e2)
+  | Implies (loc, e1, e2) | Equiv (loc, e1, e2) ->
+    let e1 = encode env e1 in
+    let e2 = encode env e2 in
+    let desc = match exp.desc with
+      | And _ -> And (loc, e1, e2)
+      | Or _ -> Or (loc, e1, e2)
+      | Implies _ -> Implies (loc, e1, e2)
+      | Equiv _ -> Equiv (loc, e1, e2)
+      | _ -> assert false
+    in
+    mk desc Tbool
+
+  | Forall (loc, qvs, e) | Exists (loc, qvs, e) ->
+    let rvars, env = List.fold_left (fun (rvars, env) (v, ty) ->
+        let (new_v, env, _) = new_binding env v ty in
+        (new_v, ty) :: rvars, env
+      ) ([], env) qvs
+    in
+    let vars = List.rev rvars in
+    let e = encode env e in
+    let desc = match exp.desc with
+      | Forall _ -> Forall (loc, vars, e)
+      | Exists _ -> Exists (loc, vars, e)
+      | _ -> assert false
+    in
+    mk desc Tbool
+
 
 and encode_apply env prim loc args ty =
   let args = List.map (encode env) args in
@@ -855,11 +883,16 @@ and encode_apply env prim loc args ty =
 
   | _ -> mk (Apply (prim, loc, args)) ty
 
+let encode_spec env env_ensures = function
+  | Requires f -> Requires (encode env f)
+  | Ensures f -> Ensures (encode env_ensures f)
+  | Fails f -> Fails (encode env f)
 
 let encode_contract ~warnings env contract =
   let env =
     {
       warnings;
+      allow_spec = false;
       counter = ref 0;
       vars = StringMap.empty;
       to_inline = ref StringMap.empty;
@@ -873,14 +906,19 @@ let encode_contract ~warnings env contract =
   (* "parameter/2" *)
   let (_, env, _) = new_binding env "parameter" contract.parameter in
 
+  let (_, env_ensures, _) = new_binding env "@storage" contract.storage in
+  let (_, env_ensures, _) = new_binding env_ensures "@result" contract.return in
+
   let code = encode env contract.code in
-  { contract with code }, ! (env.to_inline)
+  let spec = List.map (encode_spec env env_ensures) contract.spec in
+  { contract with code; spec }, ! (env.to_inline)
 
 
 let encode_code ~warnings env contract code =
   let env =
     {
       warnings;
+      allow_spec = false;
       counter = ref 0;
       vars = StringMap.empty;
       to_inline = ref StringMap.empty;

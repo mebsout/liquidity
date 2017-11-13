@@ -11,7 +11,10 @@ type storage = {
 let%entry main
     (parameter : key_hash)
     (storage : storage)
-    : unit * storage =
+  : unit * storage
+    [@requires storage.highest_bid < Current.balance () ]
+    [@ensures  @storage.highest_bid < Current.balance () ]
+  =
 
   (* Check if auction has ended *)
   if Current.time () > storage.auction_end then Current.fail ();

@@ -10,4 +10,4 @@
 open LiquidTypes
 
 val emit_code : noloc_michelson -> michelson_exp
-val emit_contract : noloc_michelson contract -> michelson_exp contract
+val emit_contract : noloc_michelson_contract -> michelson_contract

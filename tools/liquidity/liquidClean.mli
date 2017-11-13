@@ -10,4 +10,4 @@
 open LiquidTypes
 
 val clean_code : loc_michelson -> loc_michelson
-val clean_contract : loc_michelson contract -> loc_michelson contract
+val clean_contract : loc_michelson_contract -> loc_michelson_contract

@@ -9,4 +9,4 @@
 
 open LiquidTypes
 
-val simplify : noloc_michelson contract -> noloc_michelson contract
+val simplify : noloc_michelson_contract -> noloc_michelson_contract

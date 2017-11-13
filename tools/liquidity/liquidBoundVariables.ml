@@ -101,6 +101,14 @@ let rec bv code =
   | Constructor (_loc, _lid, arg) ->
      bv arg
 
+  | And (_loc, a1, a2) | Or (_loc, a1, a2)
+  | Implies (_loc, a1, a2) | Equiv (_loc, a1, a2) ->
+    StringSet.union (bv a1) (bv a2)
+
+  | Forall (_, vars, body) | Exists (_, vars, body) ->
+    List.fold_left (fun bvs (v, _) -> StringSet.remove v bvs)
+      (bv body) vars
+
   | MatchVariant (exp, _loc, args) ->
     StringSet.union (bv exp)
       (List.fold_left (fun set (pat, exp) ->
@@ -298,6 +306,31 @@ let rec bound code =
      let arg = bound arg in
      let desc = Constructor(loc,lid,arg) in
      mk desc code arg.bv
+
+  | And (loc, a1, a2) | Or (loc, a1, a2)
+  | Implies (loc, a1, a2) | Equiv (loc, a1, a2) ->
+    let a1 = bound a1 in
+    let a2 = bound a2 in
+    let desc = match code.desc with
+      | And _ -> And (loc, a1, a2)
+      | Or _ -> Or (loc, a1, a2)
+      | Implies _ -> Implies (loc, a1, a2)
+      | Equiv _ -> Equiv (loc, a1, a2)
+      | _ -> assert false
+    in
+    mk desc code (StringSet.union a1.bv a2.bv)
+
+  | Forall (loc, vars, body) | Exists (loc, vars, body) ->
+    let body = bound body in
+    let bv =
+      List.fold_left (fun bvs (v, _) -> StringSet.remove v bvs)
+        body.bv vars in
+    let desc = match code.desc with
+      | Forall _ -> Forall (loc, vars, body)
+      | Exists _ -> Exists (loc, vars, body)
+      | _ -> assert false
+    in
+    mk desc code bv
 
   | MatchVariant (exp, loc, args) ->
      let exp = bound exp in

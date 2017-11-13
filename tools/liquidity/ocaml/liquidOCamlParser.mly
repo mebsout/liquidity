@@ -445,10 +445,12 @@ let package_type_of_module_type pmty =
 %token EOF
 %token EQUAL
 %token EXCEPTION
+%token EXISTS
 %token EXTERNAL
 %token FALSE
 %token <string * char option> FLOAT
 %token FOR
+%token FORALL
 %token FUN
 %token FUNCTION
 %token FUNCTOR
@@ -480,6 +482,10 @@ let package_type_of_module_type pmty =
 %token LESSMINUS
 %token LET
 %token <string> LIDENT
+%token LOGICAND
+%token LOGICEQUIV
+%token LOGICIMPL
+%token LOGICOR
 %token LPAREN
 %token LBRACKETAT
 %token LBRACKETATAT
@@ -563,6 +569,10 @@ The precedences must be listed from low to high.
 %nonassoc IN
 %nonassoc below_SEMI
 %nonassoc SEMI                          /* below EQUAL ({lbl=...; lbl=...}) */
+%nonassoc prec_forall prec_exists
+%right    LOGICIMPL LOGICEQUIV
+%right    LOGICOR                       /* expr (e \/ e \/ e) */
+%right    LOGICAND                      /* expr (e /\ e /\ e) */
 %nonassoc LET                           /* above SEMI ( ...; let ... in ...) */
 %nonassoc below_WITH
 %nonassoc FUNCTION WITH                 /* below BAR  (match ... with ...) */
@@ -1391,6 +1401,14 @@ expr:
       { mkinfix $1 "&" $3 }
   | expr AMPERAMPER expr
       { mkinfix $1 "&&" $3 }
+  | expr LOGICAND expr
+      { mkinfix $1 "/\\" $3 }
+  | expr LOGICOR expr
+      { mkinfix $1 "\\/" $3 }
+  | expr LOGICIMPL expr
+      { mkinfix $1 "=>" $3 }
+  | expr LOGICEQUIV expr
+      { mkinfix $1 "<=>" $3 }
   | expr COLONEQUAL expr
       { mkinfix $1 ":=" $3 }
   | subtractive expr %prec prec_unary_minus
@@ -1419,6 +1437,12 @@ expr:
       { unclosed "object" 1 "end" 4 }
   | expr attribute
       { Exp.attr $1 $2 }
+  | FORALL quantified_val_idents DOT expr %prec prec_forall
+      { let qfv = mkpat (Ppat_tuple $2) in
+        mkexp (Pexp_extension (mkrhs "forall" 1, PPat (qfv, Some $4))) }
+  | EXISTS quantified_val_idents DOT expr %prec prec_exists
+      { let qfv = mkpat (Ppat_tuple $2) in
+        mkexp (Pexp_extension (mkrhs "exists" 1, PPat (qfv, Some $4))) }
   | UNDERSCORE
      { not_expecting 1 "wildcard \"_\"" }
 ;
@@ -1682,6 +1706,14 @@ type_constraint:
 opt_type_constraint:
     type_constraint { Some $1 }
   | /* empty */ { None }
+;
+quantified_val_ident:
+  | LPAREN val_ident COLON core_type RPAREN
+      { mkpat(Ppat_constraint(mkpatvar $2 1, $4)) }
+;
+quantified_val_idents:
+    quantified_val_ident                       { [$1] }
+  | quantified_val_ident quantified_val_idents { $1 :: $2 }
 ;
 
 /* Patterns */

@@ -58,9 +58,11 @@ let default_keywords =
     "else", ELSE;
     "end", END;
     "exception", EXCEPTION;
+    "exists", EXISTS;
     "external", EXTERNAL;
     "false", FALSE;
     "for", FOR;
+    "forall", FORALL;
     "fun", FUN;
     "function", FUNCTION;
     "functor", FUNCTOR;
@@ -420,6 +422,8 @@ rule token = parse
       { let s = Lexing.lexeme lexbuf in
         try token_of_keyword s
         with Not_found -> LIDENT s }
+  | '@' lowercase identchar *
+      { LIDENT (Lexing.lexeme lexbuf) }
   | lowercase_latin1 identchar_latin1 *
       { warn_latin1 lexbuf; LIDENT (Lexing.lexeme lexbuf) }
   | uppercase identchar *
@@ -552,6 +556,10 @@ rule token = parse
   | ":>" { COLONGREATER }
   | ";"  { SEMI }
   | ";;" { SEMISEMI }
+  | "/\\" { LOGICAND }
+  | "\\/" { LOGICOR }
+  | "=>" { LOGICIMPL }
+  | "<=>" { LOGICEQUIV }
   | "<"  { LESS }
   | "<-" { LESSMINUS }
   | "="  { EQUAL }

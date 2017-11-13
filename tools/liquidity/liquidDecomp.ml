@@ -373,4 +373,4 @@ let decompile contract =
                 ])), code))
   in
    *)
-  { contract with code }
+  { contract with code; spec = [] }

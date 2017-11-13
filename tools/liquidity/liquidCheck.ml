@@ -79,6 +79,10 @@ let check_used_in_env env name loc =
     with Not_found ->
       check_used env name loc (ref 0)
 
+let check_specs_allowed env loc =
+  if not env.allow_spec then
+    error loc "logic specification is not allowed in programs"
+
 (* Find variable name in either the global environment or the closure
    environment, returns a corresponding variable expression *)
 let find_var ?(count_used=true) env loc name =
@@ -140,7 +144,13 @@ let rec loc_exp env e = match e.desc with
   | Closure (_, _, loc, _, _, _)
   | Record (loc, _)
   | Constructor (loc, _, _)
-  | MatchVariant (_, loc, _) -> loc
+  | MatchVariant (_, loc, _)
+  | And (loc, _, _)
+  | Or (loc, _, _)
+  | Implies (loc, _, _)
+  | Equiv (loc, _, _)
+  | Forall (loc, _, _)
+  | Exists (loc, _, _) -> loc
 
   | Let (_, _, _, e) -> loc_exp env e
 
@@ -480,6 +490,34 @@ let rec typecheck env ( exp : syntax_exp ) : typed_exp =
     let arg = typecheck env arg in
     let ty = Tcontract(from_ty, to_ty) in
     mk (Constructor(loc, Source (from_ty, to_ty), arg)) ty
+
+  | And (loc, e1, e2) | Or (loc, e1, e2)
+  | Implies (loc, e1, e2) | Equiv (loc, e1, e2) ->
+    check_specs_allowed env loc;
+    let e1 = typecheck_expected "logic" env Tbool e1 in
+    let e2 = typecheck_expected "logic" env Tbool e2 in
+    let desc = match exp.desc with
+      | And _ -> And (loc, e1, e2)
+      | Or _ -> Or (loc, e1, e2)
+      | Implies _ -> Implies (loc, e1, e2)
+      | Equiv _ -> Equiv (loc, e1, e2)
+      | _ -> assert false
+    in
+    mk desc Tbool
+
+  | Forall (loc, qvs, e) | Exists (loc, qvs, e) ->
+    check_specs_allowed env loc;
+    let env = List.fold_left (fun env (v, ty) ->
+        new_binding env v ty |> fst
+      ) env qvs
+    in
+    let e = typecheck_expected "logic" env Tbool e in
+    let desc = match exp.desc with
+      | Forall _ -> Forall (loc, qvs, e)
+      | Exists _ -> Exists (loc, qvs, e)
+      | _ -> assert false
+    in
+    mk desc Tbool
 
   | MatchVariant (arg, loc, cases) ->
     let arg = typecheck env arg in
@@ -933,11 +971,22 @@ and typecheck_apply env prim loc args =
   let prim, ty = typecheck_prim1 env prim loc args in
   mk (Apply (prim, loc, args)) ty
 
+let typecheck_spec env env_ensures = function
+  | Requires f -> Requires (typecheck env f)
+  | Ensures f ->
+    Ensures (typecheck env_ensures f)
+  | Fails f -> Fails (typecheck env f)
+
+let typecheck_specs env env_ensures l =
+  let env = { env with allow_spec = true } in
+  let env_ensures = { env_ensures with allow_spec = true } in
+  List.map (typecheck_spec env env_ensures) l
 
 let typecheck_contract ~warnings env contract =
   let env =
     {
       warnings;
+      allow_spec = false;
       counter = ref 0;
       vars = StringMap.empty;
       to_inline = ref StringMap.empty;
@@ -948,15 +997,20 @@ let typecheck_contract ~warnings env contract =
 
   let (env, _) = new_binding env  "storage" contract.storage in
   let (env, _) = new_binding env "parameter" contract.parameter in
+  let (env_ensures, _) = new_binding env "@storage" contract.storage in
+  let (env_ensures, _) = new_binding env_ensures "@result" contract.return in
+  
+  let spec = typecheck_specs env env_ensures contract.spec in
   let expected_ty = Ttuple [contract.return; contract.storage] in
   let code =
     typecheck_expected "return value" env expected_ty contract.code in
-  { contract with code }
+  { contract with spec; code }
 
 let typecheck_code ~warnings env contract expected_ty code =
   let env =
     {
       warnings;
+      allow_spec = false;
       counter = ref 0;
       vars = StringMap.empty;
       to_inline = ref StringMap.empty;

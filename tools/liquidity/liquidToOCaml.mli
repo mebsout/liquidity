@@ -11,7 +11,7 @@ open LiquidTypes
 
 val output_version : string
 
-val structure_of_contract : syntax_exp contract -> Parsetree.structure
+val structure_of_contract : (syntax_exp, 'a) contract -> Parsetree.structure
 val string_of_structure : Parsetree.structure -> string
 
 val translate_expression : syntax_exp -> Parsetree.expression

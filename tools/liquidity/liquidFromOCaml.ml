@@ -28,9 +28,11 @@ let () =
     "else", ELSE;
     "end", END;
     (* "exception", EXCEPTION; *)
+    "exists", EXISTS;
     (* "external", EXTERNAL; *)
     "false", FALSE;
     "for", FOR;
+    "forall", FORALL;
     "fun", FUN;
     "function", FUNCTION;
     (* "functor", FUNCTOR; *)
@@ -534,15 +536,64 @@ let rec translate_code env exp =
 
     | { pexp_desc =
           Pexp_apply (
-              exp,
-              args); pexp_loc = loc } ->
-       let exp = translate_code env exp in
-       Apply(Prim_unknown, loc_of_loc loc, exp :: List.map (
-                                         function (Nolabel, exp) ->
-                                                  translate_code env exp
-                                                | (_, { pexp_loc }) ->
-                                                   error_loc pexp_loc "in arg"
-                                       ) args)
+            { pexp_desc = Pexp_ident ({ txt = Lident "/\\"}) },
+            [Nolabel, e1; Nolabel, e2]); pexp_loc = loc } ->
+      let e1, e2 = translate_code env e1, translate_code env e2 in
+      And(loc_of_loc loc, e1, e2)
+
+    | { pexp_desc =
+          Pexp_apply (
+            { pexp_desc = Pexp_ident ({ txt = Lident "\\/"}) },
+            [Nolabel, e1; Nolabel, e2]); pexp_loc = loc } ->
+      let e1, e2 = translate_code env e1, translate_code env e2 in
+      Or(loc_of_loc loc, e1, e2)
+
+    | { pexp_desc =
+          Pexp_apply (
+            { pexp_desc = Pexp_ident ({ txt = Lident "=>"}) },
+            [Nolabel, e1; Nolabel, e2]); pexp_loc = loc } ->
+      let e1, e2 = translate_code env e1, translate_code env e2 in
+      Implies(loc_of_loc loc, e1, e2)
+
+    | { pexp_desc =
+          Pexp_apply (
+            { pexp_desc = Pexp_ident ({ txt = Lident "<=>"}) },
+            [Nolabel, e1; Nolabel, e2]); pexp_loc = loc } ->
+      let e1, e2 = translate_code env e1, translate_code env e2 in
+      Equiv(loc_of_loc loc, e1, e2)
+
+    | { pexp_desc =
+          Pexp_apply (
+            exp,
+            args); pexp_loc = loc } ->
+      let exp = translate_code env exp in
+      (* Format.eprintf "aply>> %s@." (LiquidPrinter.Liquid.string_of_code exp); *)
+      Apply(Prim_unknown, loc_of_loc loc, exp :: List.map (
+          function (Nolabel, exp) ->
+            translate_code env exp
+                 | (_, { pexp_loc }) ->
+                   error_loc pexp_loc "in arg"
+        ) args)
+
+    | { pexp_desc = Pexp_extension (
+        { txt = ("forall"| "exists") as q },
+        PPat ({ppat_desc = Ppat_tuple vars_pat}, Some exp)
+      ); pexp_loc = loc } ->
+      let vars = List.map (function
+          | { ppat_desc = Ppat_constraint (
+              { ppat_desc = Ppat_var { txt = v } }, ty) } ->
+            v, translate_type env ty
+          | { ppat_loc } ->
+            error_loc ppat_loc
+              "quantified variable must be of the form \"(v : ty)\""
+        ) vars_pat
+      in
+      let e = translate_code env exp in
+      begin match q with
+        | "forall" -> Forall (loc_of_loc loc, vars, e)
+        | "exists" -> Exists (loc_of_loc loc, vars, e)
+        | _ -> assert false
+      end
 
     | { pexp_desc = Pexp_extension (
         { txt = "nat" },
@@ -778,7 +829,19 @@ let rec inline_funs exp = function
     } in
     inline_funs f_in_exp funs
 
-let rec translate_head env ext_funs head_exp args =
+let translate_specs env l =
+  List.map (function
+      | { txt = "requires" }, PStr [{ pstr_desc = Pstr_eval (exp, [])}] ->
+        Requires (translate_code env exp)
+      | { txt = "ensures" }, PStr [{ pstr_desc = Pstr_eval (exp, [])}] ->
+        Ensures (translate_code env exp)
+      | { txt = "fails" }, PStr [{ pstr_desc = Pstr_eval (exp, [])}] ->
+        Fails (translate_code env exp)
+      | { txt; loc }, _ ->
+        error_loc loc ("bad specification: " ^ txt)
+    ) l
+
+let rec translate_head env ext_funs head_exp args specs =
   match head_exp with
   | { pexp_desc =
         Pexp_fun (
@@ -795,7 +858,7 @@ let rec translate_head env ext_funs head_exp args =
             },
             head_exp) } ->
      translate_head env ext_funs head_exp
-       ((arg, translate_type env arg_type) :: args)
+       ((arg, translate_type env arg_type) :: args) specs
 
   | { pexp_desc = Pexp_constraint (head_exp, return_type); pexp_loc } ->
     let return = match translate_type env return_type with
@@ -809,7 +872,9 @@ let rec translate_head env ext_funs head_exp args =
         error_loc pexp_loc
           "return type must be a product of some type and the storage type"
     in
+    let nspecs = translate_specs env return_type.ptyp_attributes in
     translate_head env ext_funs head_exp (("return", return) :: args)
+      (specs @ nspecs)
 
   | { pexp_desc =
         Pexp_fun (
@@ -819,18 +884,7 @@ let rec translate_head env ext_funs head_exp args =
             },
             head_exp) } ->
      translate_head env ext_funs head_exp
-       (("return", translate_type env arg_type) :: args)
-
-  | { pexp_desc =
-        Pexp_fun (
-            Nolabel, None,
-            { ppat_desc =
-                Ppat_extension ({ txt = "invariant"},
-                                PStr [{ pstr_desc = Pstr_eval (exp, [])}])
-            },
-            head_exp) } ->
-    Format.eprintf "invariant@.";
-     translate_head env ext_funs head_exp args
+       (("return", translate_type env arg_type) :: args) specs
 
   | { pexp_desc =
         Pexp_fun (
@@ -849,6 +903,7 @@ let rec translate_head env ext_funs head_exp args =
      let code = translate_code env (inline_funs exp ext_funs) in
      {
        code;
+       spec = specs;
        parameter = List.assoc "parameter" args;
        storage = List.assoc "storage" args;
        return = List.assoc "return" args;
@@ -922,7 +977,7 @@ let rec translate_structure funs env ast =
              ]) } ]
            ), []) } :: _ast  (* TODO *)
     ->
-     translate_head env funs head_exp default_args
+     translate_head env funs head_exp default_args []
 
   | { pstr_desc =
          Pstr_value (

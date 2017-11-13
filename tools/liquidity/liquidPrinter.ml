@@ -806,6 +806,41 @@ module Liquid = struct
              bprint_code_rec ~debug b indent4 e;
          ) cases;
        ()
+    | And (_loc, e1, e2)
+    | Or (_loc, e1, e2)
+    | Implies (_loc, e1, e2)
+    | Equiv (_loc, e1, e2) ->
+       let op = match code.desc with
+         | And _ -> "/\\"
+         | Or _ -> "\\/"
+         | Implies _ -> "=>"
+         | Equiv _ -> "<=>"
+         | _ -> assert false
+       in
+       Printf.bprintf b "\n%s(" indent;
+       let indent2 = indent ^ "  " in
+       bprint_code_rec ~debug b indent2 e1;
+       Printf.bprintf b " %s " op;
+       bprint_code_rec ~debug b indent2 e2;
+       Printf.bprintf b ")"
+    | Forall (_loc, vars, e)
+    | Exists (_loc, vars, e) ->
+      let q = match code.desc with
+        | Forall _ -> "forall"
+        | Exists _ -> "exists"
+        | _ -> assert false
+      in
+      Printf.bprintf b "\n%s(%s" indent q;
+      List.iter (fun (v, ty) ->
+          Printf.bprintf b " (%s: " v;
+          bprint_type b indent ty;
+          Printf.bprintf b ")";
+        ) vars;
+      Printf.bprintf b ". ";
+      let indent2 = indent ^ "    " in
+      bprint_code_rec ~debug b indent2 e;
+      Printf.bprintf b ")"
+
 
   let rec bprint_code_types ~debug b indent code =
     bprint_code_base
@@ -820,7 +855,26 @@ module Liquid = struct
   let rec bprint_code ~debug b indent code =
     bprint_code_base bprint_code ~debug b indent code
 
-  let bprint_contract bprint_code ~debug b indent contract =
+  let bprint_spec bprint_code ~debug b indent =
+    let indent2 = indent ^ "    " in
+    function
+    | Requires e ->
+      Printf.bprintf b "\n%s[%%requires" indent;
+      bprint_code ~debug b indent2 e;
+      Printf.bprintf b "]";
+    | Ensures e ->
+      Printf.bprintf b "\n%s[%%ensures" indent;
+      bprint_code ~debug b indent2 e;
+      Printf.bprintf b "]";
+    | Fails e ->
+      Printf.bprintf b "\n%s[%%fails" indent;
+      bprint_code ~debug b indent2 e;
+      Printf.bprintf b "]"
+
+  let bprint_specs bprint_code ~debug b indent l =
+    List.iter (bprint_spec bprint_code ~debug b indent) l
+
+  let bprint_contract bprint_code bprint_specs ~debug b indent contract =
     let indent2 = indent ^ "    " in
     Printf.bprintf b "let%%entry main\n";
     (* Printf.bprintf b "    (amount: tez)\n"; *)
@@ -832,6 +886,7 @@ module Liquid = struct
     Printf.bprintf b ")\n";
     Printf.bprintf b "    : ";
     bprint_type b indent2 (Ttuple [contract.return; contract.storage]);
+    bprint_specs bprint_code ~debug b indent2 contract.spec;
     Printf.bprintf b "= \n";
 
     bprint_code ~debug b indent contract.code
@@ -844,9 +899,9 @@ module Liquid = struct
   let string_of_code_types ?(debug=false) code =
     to_string (bprint_code_types ~debug) code
   let string_of_contract ?(debug=false) cmd =
-    to_string (bprint_contract bprint_code ~debug) cmd
+    to_string (bprint_contract bprint_code (fun _ ~debug _ _ _ -> ()) ~debug) cmd
   let string_of_contract_types ?(debug=false) cmd =
-    to_string (bprint_contract bprint_code_types ~debug) cmd
+    to_string (bprint_contract bprint_code_types bprint_specs ~debug) cmd
 
 end
 

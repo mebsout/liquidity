@@ -271,6 +271,8 @@ let translate_code code =
     (* removed during typechecking, replaced by tuple *)
     | Record _ -> assert false
     | Constructor _ -> assert false
+    | And _ | Or _ | Implies _ | Equiv _ | Forall _ | Exists _ -> assert false
+
 
   and compile_prim depth env prim args =
     match prim, args with
@@ -532,4 +534,5 @@ let translate contract =
   { parameter = LiquidEncode.encode_type contract.parameter;
     storage = LiquidEncode.encode_type contract.storage;
     return = LiquidEncode.encode_type contract.return;
+    spec = ();
     code = translate_code contract.code }

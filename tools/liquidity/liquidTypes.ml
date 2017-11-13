@@ -42,8 +42,8 @@ type const =
   | CRecord of (string * const) list
   | CConstr of string * const
 
- and datatype =
-   (* michelson *)
+type datatype =
+  (* michelson *)
   | Tunit
   | Tbool
   | Tint
@@ -131,12 +131,6 @@ let eq_types t1 t2 =
   get_type t1 = get_type t2
 
 
-type 'exp contract = {
-    parameter : datatype;
-    storage : datatype;
-    return : datatype;
-    code : 'exp;
-  }
 
 type location = {
     loc_file : string;
@@ -372,6 +366,7 @@ type ('ty, 'a) exp = {
     bv : StringSet.t;
     fail : bool;
     transfer : bool;
+    isspec : bool;
   }
 
 and ('ty, 'a) exp_desc =
@@ -428,6 +423,14 @@ and ('ty, 'a) exp_desc =
                 * string * ('ty, 'a) exp (* ifplus *)
                 * string * ('ty, 'a) exp (* ifminus *)
 
+  (* Specs *)
+  | And of location * ('ty, 'a) exp * ('ty, 'a) exp
+  | Or of location * ('ty, 'a) exp * ('ty, 'a) exp
+  | Implies of location * ('ty, 'a) exp * ('ty, 'a) exp
+  | Equiv of location * ('ty, 'a) exp * ('ty, 'a) exp
+  | Forall of location * (string * datatype) list * ('ty, 'a) exp
+  | Exists of location * (string * datatype) list * ('ty, 'a) exp
+
 type typed
 type encoded
 type syntax_exp = (unit, unit) exp
@@ -436,47 +439,82 @@ type encoded_exp = (datatype, encoded) exp
 type live_exp = (datatype * datatype StringMap.t, encoded) exp
 
 
+type 'a spec =
+  | Requires of 'a
+  | Ensures of 'a
+  | Fails of 'a
+
+type 'a specs = 'a spec list
+type syntax_specs = syntax_exp specs
+type typed_specs = typed_exp specs
+type encoded_specs = encoded_exp specs
+
+type ('exp, 'spec) contract = {
+  parameter : datatype;
+  storage : datatype;
+  return : datatype;
+  spec : 'spec;
+  code : 'exp;
+}
+
 let mk =
   let bv = StringSet.empty in
   fun desc ty ->
-    let fail, transfer = match desc with
+    let fail, transfer, isspec = match desc with
       | Const (_, _)
-      | Var (_, _, _) -> false, false
+      | Var (_, _, _) -> false, false, false
 
-      | LetTransfer _ -> true, true
+      | LetTransfer _ -> true, true, false
 
       | SetVar (_, _, _, e)
       | Constructor (_, _, e)
-      | Lambda (_, _, _, e, _) -> e.fail, e.transfer
+      | Lambda (_, _, _, e, _)
+        -> e.fail, e.transfer, e.isspec
+
+      | Forall (_, _, e)
+      | Exists (_, _, e)
+        -> e.fail, e.transfer, true
 
       | Seq (e1, e2)
       | Let (_, _, e1, e2)
-      | Loop (_, _, e1, e2) -> e1.fail || e2.fail, e1.transfer || e2.transfer
+      | Loop (_, _, e1, e2) ->
+        e1.fail || e2.fail, e1.transfer || e2.transfer, e1.isspec || e2.isspec
+
+      | And (_, e1, e2)
+      | Or (_, e1, e2)
+      | Implies (_, e1, e2)
+      | Equiv (_, e1, e2)
+        -> e1.fail || e2.fail, e1.transfer || e2.transfer, true
 
       | If (e1, e2, e3)
       | MatchOption (e1, _, e2, _, e3)
       | MatchNat (e1, _, _, e2, _, e3)
       | MatchList (e1, _, _, _, e2, e3) ->
         e1.fail || e2.fail || e3.fail,
-        e1.transfer || e2.transfer || e3.transfer
+        e1.transfer || e2.transfer || e3.transfer,
+        e1.isspec || e2.isspec || e3.isspec
 
       | Apply (prim, _, l) ->
         prim = Prim_fail || List.exists (fun e -> e.fail) l,
-        List.exists (fun e -> e.transfer) l
+        List.exists (fun e -> e.transfer) l,
+        List.exists (fun e -> e.isspec) l
 
       | Closure (_, _, _, env, e, _) ->
         e.fail || List.exists (fun (_, e) -> e.fail) env,
-        e.transfer || List.exists (fun (_, e) -> e.transfer) env
+        e.transfer || List.exists (fun (_, e) -> e.transfer) env,
+        e.isspec || List.exists (fun (_, e) -> e.isspec) env
 
       | Record (_, labels) ->
         List.exists (fun (_, e) -> e.fail) labels,
-        List.exists (fun (_, e) -> e.transfer) labels
+        List.exists (fun (_, e) -> e.transfer) labels,
+        List.exists (fun (_, e) -> e.isspec) labels
 
       | MatchVariant (e, _, cases) ->
         e.fail || List.exists (fun (_, e) -> e.fail) cases,
-        e.transfer || List.exists (fun (_, e) -> e.transfer) cases
+        e.transfer || List.exists (fun (_, e) -> e.transfer) cases,
+        e.isspec || List.exists (fun (_, e) -> e.isspec) cases
     in
-    { desc; ty; bv; fail; transfer }
+    { desc; ty; bv; fail; transfer; isspec }
 
 
 type michelson_exp =
@@ -597,13 +635,14 @@ type env = {
   }
 
 (* fields updated in LiquidCheck *)
-type 'a typecheck_env = {
+type ('a, 'b) typecheck_env = {
     warnings : bool;
+    allow_spec : bool;
     counter : int ref;
     vars : (string * datatype * int ref) StringMap.t;
     env : env;
     to_inline : encoded_exp StringMap.t ref;
-    contract : 'a contract;
+    contract : ('a, 'b) contract;
     clos_env : closure_env option;
 }
 
@@ -619,7 +658,7 @@ type node = {
   mutable prevs : node list;
 }
 
- and node_kind =
+and node_kind =
    | N_UNKNOWN of string
    | N_VAR of string
    | N_START
@@ -661,12 +700,13 @@ type node = {
 
 type node_exp = node * node
 
-type syntax_contract = syntax_exp contract
-type typed_contract = typed_exp contract
-type encoded_contract = encoded_exp contract
-type michelson_contract = michelson_exp contract
-type node_contract = node_exp contract
-type noloc_michelson_contract = noloc_michelson contract
+type syntax_contract = (syntax_exp, syntax_specs) contract
+type typed_contract = (typed_exp, typed_specs) contract
+type encoded_contract = (encoded_exp, encoded_specs) contract
+type michelson_contract = (michelson_exp, unit) contract
+type node_contract = (node_exp, unit) contract
+type noloc_michelson_contract = (noloc_michelson, unit) contract
+type loc_michelson_contract = (loc_michelson, unit) contract
 
 type warning =
   | Unused of string

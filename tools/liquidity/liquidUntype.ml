@@ -184,8 +184,9 @@ let rec untype (env : env) (code : encoded_exp) : syntax_exp =
                     ])
 
     | Record (_, _)
-      | Constructor (_, _, _)
-      | MatchVariant (_, _, _) ->
+    | And _ | Or _ | Implies _ | Equiv _ | Forall _ | Exists _
+    | Constructor (_, _, _)
+    | MatchVariant (_, _, _) ->
 
        LiquidLoc.raise_error
          "untype: unimplemented code:\n%s%!"
@@ -205,4 +206,4 @@ let untype_contract contract =
   let env = empty_env () in
   let env = new_binding "storage/1" "storage" env in
   let env = new_binding "parameter/2" "parameter" env in
-  { contract with code = untype env contract.code }
+  { contract with code = untype env contract.code; spec = () }

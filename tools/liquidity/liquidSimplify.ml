@@ -119,10 +119,36 @@ let compute code to_inline =
                                      lab_x_exp_list in
        { exp with desc = Record(loc, lab_x_exp_list) }
 
-    | Constructor _ -> assert false (* never found in typed_exp *)
+    | And (loc, e1, e2) | Or (loc, e1, e2)
+    | Implies (loc, e1, e2) | Equiv (loc, e1, e2) ->
+      let e1 = iter e1 in
+      let e2 = iter e2 in
+      { exp with desc = match exp.desc with
+            | And _ -> And (loc, e1, e2)
+            | Or _ -> Or (loc, e1, e2)
+            | Implies _ -> Implies (loc, e1, e2)
+            | Equiv _ -> Equiv (loc, e1, e2)
+            | _ -> assert false }
+
+    | Forall (loc, vars, body) ->
+      { exp with desc = Forall (loc, vars, iter body) }
+    | Exists (loc, vars, body) ->
+      { exp with desc = Exists (loc, vars, iter body) }
+
+    | Constructor _ -> assert false (* never found in encoded_exp *)
   in
 
   iter code
 
+let simplify_specs l to_inline =
+  List.map (function
+      | Requires f -> Requires (compute f to_inline)
+      | Ensures f -> Ensures (compute f to_inline)
+      | Fails f -> Fails (compute f to_inline)
+    ) l
+
 let simplify_contract contract to_inline =
-  { contract with code = compute contract.code to_inline }
+  { contract with
+    code = compute contract.code to_inline;
+    spec = simplify_specs contract.spec to_inline;
+  }

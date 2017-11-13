@@ -248,7 +248,7 @@ let convert_contract loc_table c =
   let parameter = convert_type c.Script_repr.arg_type in
   let storage = convert_type c.Script_repr.storage_type in
   let code = convert_code loc_table c.Script_repr.code in
-  { code; storage; return; parameter }
+  { code; spec = (); storage; return; parameter }
 
 let liquid_loc_of_script_loc f { Script_located_ir.start; stop } =
   { loc_file = f;

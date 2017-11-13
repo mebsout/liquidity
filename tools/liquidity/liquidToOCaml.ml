@@ -314,6 +314,10 @@ let rec convert_code expr =
                    [convert_type from_ty;
                     convert_type to_ty])
 
+  | And _ | Or _ | Implies _ | Equiv _ | Forall _ | Exists _ ->
+    assert false
+
+
 let structure_of_contract contract =
   let code = convert_code contract.code in
   [
