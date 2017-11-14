@@ -892,6 +892,7 @@ let encode_contract ~warnings env contract =
     {
       warnings;
       allow_spec = false;
+      in_post = false;
       counter = ref 0;
       vars = StringMap.empty;
       to_inline = ref StringMap.empty;
@@ -918,6 +919,7 @@ let encode_code ~warnings env contract code =
     {
       warnings;
       allow_spec = false;
+      in_post = false;
       counter = ref 0;
       vars = StringMap.empty;
       to_inline = ref StringMap.empty;

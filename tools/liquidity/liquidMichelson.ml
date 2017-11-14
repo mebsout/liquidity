@@ -343,8 +343,9 @@ the ending NIL is not annotated with a type *)
       let arg = compile_no_transfer (depth+1) env arg in
       [ {i=PUSH (Tlist ty, CList[])} ] @ arg @ [ ii CONS ]
 
-    (* Should be removed in LiquidCheck *)
+    (* Should be removed in LiquidEncode *)
     | Prim_unknown, _
+    | Prim_old, _
     | Prim_list_rev, _ -> assert false
 
     (* Should have disappeared *)
@@ -438,7 +439,7 @@ the ending NIL is not annotated with a type *)
            | Prim_Left|Prim_Right|Prim_Source|Prim_unused
            | Prim_coll_find|Prim_coll_update|Prim_coll_mem
            | Prim_coll_reduce|Prim_coll_map|Prim_coll_size
-           | Prim_list_rev), _ ->
+           | Prim_list_rev|Prim_old), _ ->
            (* already filtered out *)
            assert false
 

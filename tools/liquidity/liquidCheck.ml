@@ -305,6 +305,12 @@ let rec typecheck env ( exp : syntax_exp ) : typed_exp =
 
 
   | Apply (Prim_unknown, loc,
+           ({ desc = Var ("old", varloc, [])} :: [arg]))
+    when env.allow_spec && env.in_post ->
+    let exp = typecheck env arg in
+    mk (Apply (Prim_old, loc, [exp])) exp.ty
+
+  | Apply (Prim_unknown, loc,
            ({ desc = Var (name, varloc, [])} as f) :: ((_ :: _) as r))
        when StringMap.mem name env.vars ->
      let exp = List.fold_left (fun f x ->
@@ -952,6 +958,8 @@ and typecheck_prim2 env prim loc args =
      if head_ty <> tail_ty then
        type_error loc "Bad types for list" head_ty tail_ty;
      Tlist tail_ty
+  | Prim_old, _ ->
+    error loc "old can only be used in post-conditions"
   | prim, _ ->
      error loc "Bad %d args for primitive %S:\n    %s\n" (List.length args)
            (LiquidTypes.string_of_primitive prim)
@@ -982,6 +990,7 @@ and typecheck_apply env prim loc args =
 
 let typecheck_spec env env_ensures = function
   | Requires f ->
+    let env = { env_ensures with in_post = false } in
     let f = typecheck env f in
     if f.transfer then
       error (loc_exp env f) "transfer not allowed in specification";
@@ -989,13 +998,15 @@ let typecheck_spec env env_ensures = function
       error (loc_exp env f) "expressions in specifications cannot fail";
     Requires f
   | Ensures f ->
-    let f = typecheck env_ensures f in
+    let env = { env_ensures with in_post = true } in
+    let f = typecheck env f in
     if f.transfer then
-      error (loc_exp env_ensures f) "transfer not allowed in specification";
+      error (loc_exp env f) "transfer not allowed in specification";
     if f.fail then
       error (loc_exp env f) "expressions in specifications cannot fail";
     Ensures f
   | Fails f ->
+    let env = { env with in_post = true } in
     let f = typecheck env f in
     if f.transfer then
       error (loc_exp env f) "transfer not allowed in specification";
@@ -1013,6 +1024,7 @@ let typecheck_contract ~warnings env contract =
     {
       warnings;
       allow_spec = false;
+      in_post = false;
       counter = ref 0;
       vars = StringMap.empty;
       to_inline = ref StringMap.empty;
@@ -1025,7 +1037,7 @@ let typecheck_contract ~warnings env contract =
   let (env, _) = new_binding env "parameter" contract.parameter in
   let (env_ensures, _) = new_binding env "@storage" contract.storage in
   let (env_ensures, _) = new_binding env_ensures "@result" contract.return in
-  
+
   let spec = typecheck_specs env env_ensures contract.spec in
   let expected_ty = Ttuple [contract.return; contract.storage] in
   let code =
@@ -1037,6 +1049,7 @@ let typecheck_code ~warnings env contract expected_ty code =
     {
       warnings;
       allow_spec = false;
+      in_post = false;
       counter = ref 0;
       vars = StringMap.empty;
       to_inline = ref StringMap.empty;

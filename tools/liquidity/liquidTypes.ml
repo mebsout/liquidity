@@ -227,6 +227,8 @@ type primitive =
 
   | Prim_exec
 
+  (* Specs *)
+  | Prim_old
 
 let primitive_of_string = Hashtbl.create 101
 let string_of_primitive = Hashtbl.create 101
@@ -328,6 +330,7 @@ let () =
               "<unknown>", Prim_unknown;
               "<unused>", Prim_unused;
 
+              "old", Prim_old;
             ]
 
 let primitive_of_string s =
@@ -638,6 +641,7 @@ type env = {
 type ('a, 'b) typecheck_env = {
     warnings : bool;
     allow_spec : bool;
+    in_post : bool;
     counter : int ref;
     vars : (string * datatype * int ref) StringMap.t;
     env : env;
