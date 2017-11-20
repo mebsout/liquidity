@@ -28,25 +28,36 @@ let verbosity = ref (try
 
 let arg_peephole = ref true
 let arg_keepon = ref false
+let arg_typeonly = ref false
+let arg_parseonly = ref false
+let arg_singleline = ref false
 
 let compile_liquid_file filename =
   let ocaml_ast = LiquidFromOCaml.read_file filename in
   if !verbosity>0 then
   FileString.write_file (filename ^ ".ocaml")
-                        (LiquidOCamlPrinter.contract_ast ocaml_ast);
+    (LiquidOCamlPrinter.contract_ast ocaml_ast);
+  if !arg_parseonly then exit 0;
   let syntax_ast, env = LiquidFromOCaml.translate filename ocaml_ast in
   if !verbosity>0 then
   FileString.write_file (filename ^ ".syntax")
                         (LiquidPrinter.Liquid.string_of_contract
                            syntax_ast);
-  let typed_ast, to_inline =
-    LiquidCheck.typecheck_contract ~warnings:true env syntax_ast in
+  let typed_ast = LiquidCheck.typecheck_contract
+      ~warnings:true env syntax_ast in
   if !verbosity>0 then
-  FileString.write_file (filename ^ ".typed")
-                        (LiquidPrinter.Liquid.string_of_contract
-                           typed_ast);
+    FileString.write_file (filename ^ ".typed")
+      (LiquidPrinter.Liquid.string_of_contract_types
+         typed_ast);
+  let encoded_ast, to_inline =
+    LiquidEncode.encode_contract ~warnings:true env typed_ast in
+  if !verbosity>0 then
+    FileString.write_file (filename ^ ".encoded")
+      (LiquidPrinter.Liquid.string_of_contract
+         encoded_ast);
+  if !arg_typeonly then exit 0;
 
-  let live_ast = LiquidSimplify.simplify_contract typed_ast to_inline in
+  let live_ast = LiquidSimplify.simplify_contract encoded_ast to_inline in
   if !verbosity>0 then
   FileString.write_file (filename ^ ".simple")
                         (LiquidPrinter.Liquid.string_of_contract
@@ -63,9 +74,13 @@ let compile_liquid_file filename =
   (*  let michelson_ast = LiquidEmit.emit_contract pre_michelson in *)
 
   let output = filename ^ ".tz" in
-  FileString.write_file output
-                        (LiquidToTezos.string_of_contract
-                           (LiquidToTezos.convert_contract pre_michelson));
+  let c = LiquidToTezos.convert_contract pre_michelson in
+  let s =
+    if !arg_singleline
+    then LiquidToTezos.line_of_contract c
+    else LiquidToTezos.string_of_contract c
+  in
+  FileString.write_file output s;
   Printf.eprintf "File %S generated\n%!" output;
   Printf.eprintf "If tezos is compiled, you may want to typecheck with:\n";
   Printf.eprintf "  tezos-client typecheck program %s\n" output
@@ -77,6 +92,7 @@ let compile_tezos_file filename =
   let c = LiquidFromTezos.convert_contract loc_table code in
   let c = LiquidClean.clean_contract c in
   let c = LiquidInterp.interp c in
+  if !arg_parseonly then exit 0;
   if !verbosity>0 then begin
     FileString.write_file  (filename ^ ".dot")
                            (LiquidDot.to_string c);
@@ -84,15 +100,17 @@ let compile_tezos_file filename =
     if Sys.command cmd <> 0 then
       Printf.eprintf "Warning: could not generate pdf from .dot file\n%!";
   end;
+  if !arg_typeonly then exit 0;
   let c = LiquidDecomp.decompile c in
   if !verbosity>0 then
   FileString.write_file  (filename ^ ".liq.pre")
                          (LiquidPrinter.Liquid.string_of_contract c);
   let env = LiquidFromOCaml.initial_env filename in
-  let typed_ast, to_inline =
-    LiquidCheck.typecheck_contract ~warnings:false env c in
+  let typed_ast = LiquidCheck.typecheck_contract ~warnings:false env c in
+  let encode_ast, to_inline =
+    LiquidEncode.encode_contract ~warnings:false env typed_ast in
   (*  Printf.eprintf "Inlining: %d\n%!" (StringMap.cardinal to_inline); *)
-  let live_ast = LiquidSimplify.simplify_contract typed_ast to_inline in
+  let live_ast = LiquidSimplify.simplify_contract encode_ast to_inline in
   let untyped_ast = LiquidUntype.untype_contract live_ast in
   let output = filename ^ ".liq" in
   FileString.write_file  output
@@ -107,7 +125,7 @@ let compile_tezos_file filename =
   ()
 
 
-let compile_file filename =
+let handle_file filename =
   if Filename.check_suffix filename ".liq" then
     compile_liquid_file filename
   else
@@ -118,9 +136,9 @@ let compile_file filename =
         exit 2
       end
 
-let compile_file filename =
+let handle_file filename =
   try
-    compile_file filename
+    handle_file filename
   with (LiquidError _) as e ->
        if not !arg_keepon then raise e
 
@@ -156,30 +174,34 @@ let main () =
       "--verbose", Arg.Unit (fun () -> incr verbosity), " Increment verbosity";
       "--no-peephole", Arg.Clear arg_peephole,
       " Disable peephole optimizations";
+      "--type-only", Arg.Set arg_typeonly, "Stop after type checking";
+      "--parse-only", Arg.Set arg_parseonly, "Stop after parsing";
+      "--single-line", Arg.Set arg_singleline,
+      "Output Michelson on a single line";
       "--data", Arg.Tuple [
-                    Arg.String (fun s -> Data.contract := s);
-                    Arg.String (fun s -> Data.parameter := s);
-                    Arg.String (fun s -> Data.storage := s);
-                    Arg.Unit (fun () ->
-                        work_done := true;
-                        Data.translate ());
-                  ],
+        Arg.String (fun s -> Data.contract := s);
+        Arg.String (fun s -> Data.parameter := s);
+        Arg.String (fun s -> Data.storage := s);
+        Arg.Unit (fun () ->
+            work_done := true;
+            Data.translate ());
+      ],
       "FILE.liq PARAMETER STORAGE Translate to Michelson";
-                   ] @ LiquidToTezos.arg_list work_done
+    ] @ LiquidToTezos.arg_list work_done
 
   in
   let arg_usage = String.concat "\n" [
-"liquidity [OPTIONS] FILES";
-"";
-"The liquidity compiler can translate files from Liquidity to Michelson";
-"and from Michelson to Liquidity. Liquidity files must end with the .liq";
-"extension. Michelson files must end with the .tz extension.";
-"";
-"Available options:";
-                                ]
+      "liquidity [OPTIONS] FILES";
+      "";
+      "The liquidity compiler can translate files from Liquidity to Michelson";
+      "and from Michelson to Liquidity. Liquidity files must end with the .liq";
+      "extension. Michelson files must end with the .tz extension.";
+      "";
+      "Available options:";
+    ]
   in
-  Arg.parse arg_list (fun s -> work_done := true; compile_file s)
-            arg_usage;
+  Arg.parse arg_list (fun s -> work_done := true; handle_file s)
+    arg_usage;
 
   if not !work_done then
     Arg.usage arg_list arg_usage

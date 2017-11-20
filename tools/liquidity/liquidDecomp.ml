@@ -11,7 +11,7 @@ open LiquidTypes
 
 let noloc = LiquidLoc.noloc
 
-let mk desc = { desc; ty = (); bv = StringSet.empty; fail = false }
+let mk desc = mk desc ()
 
 let const_name_of_datatype = function
   | Tunit -> "u"
@@ -26,6 +26,8 @@ let const_name_of_datatype = function
   | Tsignature -> "sig"
   | Ttuple _ -> "tuple"
   | Toption _ -> "opt"
+  | Trecord _ -> "record"
+  | Tsum _ -> "sum"
   | Tlist _ -> "l"
   | Tset _ -> "s"
   | Tmap _ -> "map"
@@ -33,7 +35,6 @@ let const_name_of_datatype = function
   | Tor _ -> "or"
   | Tlambda _ | Tclosure _  -> "fun"
   | Tfail -> "fail"
-  | Ttype _ -> "ty"
 
 
 let rec var_of node =

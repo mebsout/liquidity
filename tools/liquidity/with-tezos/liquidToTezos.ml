@@ -35,6 +35,9 @@ let rec convert_const expr =
   | CNone -> Script_repr.Prim(0, "None", [], debug)
 
   | CSome x -> Script_repr.Prim(0, "Some", [convert_const x], debug)
+  | CLeft x -> Script_repr.Prim(0, "Left", [convert_const x], debug)
+  | CRight x -> Script_repr.Prim(0, "Right", [convert_const x], debug)
+
   | CTuple [] -> assert false
   | CTuple [_] -> assert false
   | CTuple [x;y] ->
@@ -45,6 +48,7 @@ let rec convert_const expr =
                                   convert_const (CTuple y)], debug)
   | CList args -> Script_repr.Prim(0, "List",
                                    List.map convert_const args, debug)
+
   | CMap args ->
      Script_repr.Prim(0, "Map",
                       List.map (fun (x,y) ->
@@ -97,8 +101,7 @@ let rec convert_type expr =
   | Tset x -> prim "set" [convert_type x]
   | Tlist x -> prim "list" [convert_type x]
   | Toption x -> prim "option" [convert_type x]
-  | Tfail -> assert false
-  | Ttype (_, ty) -> convert_type ty
+  | Tfail | Trecord _ | Tsum _ -> assert false
 
 let rec convert_code expr =
   match expr.i with
@@ -214,7 +217,21 @@ let string_of_contract c =
   Client_proto_programs.print_program (fun _ -> None) ppf (c, []);
   Format.flush_str_formatter ()
 
-
+let line_of_contract c =
+  let ppf = Format.str_formatter in
+  let ffs = Format.pp_get_formatter_out_functions ppf () in
+  let new_ffs =
+    { ffs with
+      Format.out_newline = (fun () -> ffs.Format.out_spaces 1);
+      (* Format.out_indent = (fun _ -> ()); *)
+    } in
+  Format.pp_set_formatter_out_functions ppf new_ffs;
+  Format.pp_set_max_boxes ppf 0;
+  Format.pp_set_max_indent ppf 0;
+  Client_proto_programs.print_program (fun _ -> None) ppf (c, []);
+  let s = Format.flush_str_formatter () in
+  Format.pp_set_formatter_out_functions ppf ffs;
+  s
 
 
 let contract_amount = ref "1000.00"

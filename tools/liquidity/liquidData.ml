@@ -14,7 +14,7 @@
 
 open LiquidTypes
 
-let rec translate_const_exp loc exp =
+let rec translate_const_exp loc (exp : encoded_exp) =
   match exp.desc with
   | Let (_, loc, _, _) ->
      LiquidLoc.raise_error ~loc "'let' forbidden in constant"
@@ -22,7 +22,7 @@ let rec translate_const_exp loc exp =
 
   (* removed during typechecking *)
   | Record (_, _)
-    | Constructor (_, _, _) -> assert false
+  | Constructor (_, _, _) -> assert false
 
   | Apply (Prim_Left, _, [x; _ty]) -> CLeft (translate_const_exp loc x)
   | Apply (Prim_Right, _, [x; _ty]) -> CRight (translate_const_exp loc x)
@@ -38,37 +38,39 @@ let rec translate_const_exp loc exp =
                              (LiquidTypes.string_of_primitive prim)
                              (List.length args)
   | Var (_, _, _)
-    | SetVar (_, _, _, _)
-    | If (_, _, _)
-    | Seq (_, _)
-    | LetTransfer (_, _, _, _, _, _, _, _)
-    | MatchOption (_, _, _, _, _)
-    | MatchNat (_, _, _, _, _, _)
-    | MatchList (_, _, _, _, _, _)
-    | Loop (_, _, _, _)
-    | Lambda (_, _, _, _, _)
-    | Closure (_, _, _, _, _, _)
-    | MatchVariant (_, _, _)
+  | SetVar (_, _, _, _)
+  | If (_, _, _)
+  | Seq (_, _)
+  | LetTransfer (_, _, _, _, _, _, _, _)
+  | MatchOption (_, _, _, _, _)
+  | MatchNat (_, _, _, _, _, _)
+  | MatchList (_, _, _, _, _, _)
+  | Loop (_, _, _, _)
+  | Lambda (_, _, _, _, _)
+  | Closure (_, _, _, _, _, _)
+  | MatchVariant (_, _, _)
     ->
-     LiquidLoc.raise_error ~loc "non-constant expression"
+    LiquidLoc.raise_error ~loc "non-constant expression"
 
 let data_of_liq ~filename ~contract ~parameter ~storage =
   (* first, extract the types *)
   let ocaml_ast = LiquidFromOCaml.structure_of_string
                     ~filename contract in
   let contract, env = LiquidFromOCaml.translate ~filename ocaml_ast in
-  let _, _ = LiquidCheck.typecheck_contract
+  let _ = LiquidCheck.typecheck_contract
                ~warnings:true env contract in
 
   let translate filename s ty =
     try
       let ml_exp = LiquidFromOCaml.expression_of_string ~filename s in
       let sy_exp = LiquidFromOCaml.translate_expression env ml_exp in
-      let ty_exp =
-        LiquidCheck.typecheck_code ~warnings:true env contract ty sy_exp in
+      let ty_exp = LiquidCheck.typecheck_code
+          ~warnings:true env contract ty sy_exp in
+      let enc_exp = LiquidEncode.encode_code
+          ~warnings:true env contract ty_exp in
       let loc = LiquidLoc.loc_in_file filename in
-      let ty_exp = translate_const_exp loc ty_exp in
-      let s = LiquidPrinter.Michelson.line_of_const ty_exp in
+      let c = translate_const_exp loc enc_exp in
+      let s = LiquidPrinter.Michelson.line_of_const c in
       Ok s
     with LiquidError error ->
       Error error

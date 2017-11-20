@@ -13,7 +13,7 @@
 
 open LiquidTypes
 
-let mk desc = { desc; ty = (); bv = StringSet.empty; fail = false }
+let mk desc = mk desc ()
 
 type env = {
     env_map : string StringMap.t;
@@ -75,7 +75,7 @@ let find_free env var_arg bv =
 scopes. Unfortunately, without hash-consing, this can be quite expensive.
  *)
 
-let rec untype (env : env) (code : typed_exp) =
+let rec untype (env : env) (code : encoded_exp) : syntax_exp =
   let desc =
     match code.desc with
     | If (cond, ifthen, ifelse) ->
@@ -90,10 +90,6 @@ let rec untype (env : env) (code : typed_exp) =
     | Apply(Prim_Right, loc, [arg; unused]) ->
        Constructor(loc, Right unused.ty, untype env arg)
     | Apply (prim, loc, args) ->
-       let prim = match prim with
-         | Prim_tuple_get_last -> Prim_tuple_get
-         | _ -> prim
-       in
        Apply(prim, loc, List.map (untype env) args)
 
     | Lambda (arg_name, arg_type, loc, body, res_type) ->

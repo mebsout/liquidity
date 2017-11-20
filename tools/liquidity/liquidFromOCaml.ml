@@ -80,10 +80,10 @@ let () =
 
 
 (* The minimal version of liquidity files that are accepted by this compiler *)
-let minimal_version = 0.12
+let minimal_version = 0.13
 
 (* The maximal version of liquidity files that are accepted by this compiler *)
-let maximal_version = 0.12
+let maximal_version = 0.13
 
 
 open Asttypes
@@ -133,7 +133,7 @@ let todo_loc loc msg =
   let loc = loc_of_loc loc in
   LiquidLoc.raise_error ~loc "Syntax %S not yet implemented%!" msg
 
-let rec translate_type env typ =
+let rec translate_type env ?expected typ =
   match typ with
   | { ptyp_desc = Ptyp_constr ({ txt = Lident "unit" }, []) } -> Tunit
   | { ptyp_desc = Ptyp_constr ({ txt = Lident "bool" }, []) } -> Tbool
@@ -146,41 +146,79 @@ let rec translate_type env typ =
   | { ptyp_desc = Ptyp_constr ({ txt = Lident "key_hash" }, []) } -> Tkey_hash
   | { ptyp_desc = Ptyp_constr ({ txt = Lident "signature" }, []) } -> Tsignature
 
-
-
   | { ptyp_desc = Ptyp_constr ({ txt = Lident "option" }, [param_type]) } ->
-     Toption (translate_type env param_type)
+    let expected = match expected with
+      | Some (Toption ty) -> Some ty
+      | _ -> None
+    in
+    Toption (translate_type env ?expected param_type)
   | { ptyp_desc = Ptyp_constr ({ txt = Lident "list" }, [param_type]) } ->
-     Tlist (translate_type env param_type)
+    let expected = match expected with
+      | Some (Tlist ty) -> Some ty
+      | _ -> None
+    in
+    Tlist (translate_type env ?expected param_type)
   | { ptyp_desc = Ptyp_constr ({ txt = Lident "set" }, [param_type]) } ->
-     Tset (translate_type env param_type)
-
+    let expected = match expected with
+      | Some (Tset ty) -> Some ty
+      | _ -> None
+    in
+    Tset (translate_type env ?expected param_type)
 
   | { ptyp_desc = Ptyp_constr ({ txt = Lident "contract" },
                                [parameter_type; return_type]) } ->
-     Tcontract (translate_type env parameter_type, translate_type env return_type)
+    let expected1, expected2 = match expected with
+      | Some (Tcontract (ty1, ty2)) -> Some ty1, Some ty2
+      | _ -> None, None
+    in
+    Tcontract (translate_type env ?expected:expected1 parameter_type,
+               translate_type env ?expected:expected2 return_type)
   | { ptyp_desc = Ptyp_constr ({ txt = Lident "variant" },
-                               [parameter_type; return_type]) } ->
-     Tor (translate_type env parameter_type, translate_type env return_type)
+                               [left_type; right_type]) } ->
+    let expected1, expected2 = match expected with
+      | Some (Tor (ty1, ty2)) -> Some ty1, Some ty2
+      | _ -> None, None
+    in
+    Tor (translate_type env ?expected:expected1 left_type,
+         translate_type env ?expected:expected2 right_type)
   | { ptyp_desc = Ptyp_constr ({ txt = Lident "map" },
-                               [parameter_type; return_type]) } ->
-     Tmap (translate_type env parameter_type, translate_type env return_type)
-  | { ptyp_desc = Ptyp_constr ({ txt = Lident "lambda" },
-                               [parameter_type; return_type]) } ->
-     Tlambda (translate_type env parameter_type, translate_type env return_type)
+                               [key_type; val_type]) } ->
+    let expected1, expected2 = match expected with
+      | Some (Tmap (ty1, ty2)) -> Some ty1, Some ty2
+      | _ -> None, None
+    in
+    Tmap (translate_type env ?expected:expected1 key_type,
+          translate_type env ?expected:expected2 val_type)
+
+  | { ptyp_desc = Ptyp_arrow (_, parameter_type, return_type) } ->
+    let expected1, expected2 = match expected with
+      | Some (Tcontract (ty1, ty2)) -> Some ty1, Some ty2
+      | _ -> None, None
+    in
+    Tlambda (translate_type env ?expected:expected1 parameter_type,
+             translate_type env ?expected:expected2 return_type)
 
   | { ptyp_desc = Ptyp_tuple types } ->
-     Ttuple (List.map (translate_type env) types)
+    let expecteds = match expected with
+      | Some (Ttuple tys) when List.length types = List.length tys ->
+        List.map (fun ty -> Some ty) tys
+      | _ -> List.map (fun _ -> None) types
+    in
+    Ttuple (List.map2 (fun ty expected -> translate_type env ?expected ty)
+              types expecteds)
 
   | { ptyp_desc = Ptyp_constr ({ txt = Lident ty_name }, []) } ->
      begin
-       try
-         match StringMap.find ty_name env.types with
-         | ty, Type_alias -> ty
-         | ty, _ -> Ttype (ty_name, ty)
+       try StringMap.find ty_name env.types
        with Not_found ->
          unbound_type typ.ptyp_loc ty_name
      end
+
+  | { ptyp_desc = Ptyp_any; ptyp_loc } ->
+    begin match expected with
+      | Some ty -> ty
+      | None -> error_loc ptyp_loc "cannot infer type"
+    end
 
   | { ptyp_loc } -> error_loc ptyp_loc "in type"
 
@@ -335,16 +373,82 @@ let rec translate_const env exp =
   | { pexp_desc = Pexp_construct (
                       { txt = Lident "Some" }, Some arg) } ->
      let arg, ty = translate_const env arg in
-     begin
-       match ty with
-       | None -> error_loc exp.pexp_loc "No type for Some arg"
-       | Some ty ->
-          CSome arg, Some (Toption ty)
-     end
+     let ty = match ty with
+       | None -> None
+       | Some ty -> Some (Toption ty)
+     in
+     CSome arg, ty
+
+  | { pexp_desc = Pexp_construct (
+                      { txt = Lident "Left" }, Some arg) } ->
+    let arg, ty = translate_const env arg in
+    let ty = match ty with
+      | None -> None
+      | Some ty -> Some (Tor (ty, Tunit (* dummy *)))
+    in
+    CLeft arg, ty
+
+  | { pexp_desc = Pexp_construct (
+                      { txt = Lident "Right" }, Some arg) } ->
+    let arg, ty = translate_const env arg in
+    let ty = match ty with
+      | None -> None
+      | Some ty -> Some (Tor (Tunit (* dummy *), ty))
+    in
+    CRight arg, ty
+
+  | { pexp_desc = Pexp_construct ({ txt = Lident lid }, args) } ->
+    begin
+      try
+        let ty_name, tya = StringMap.find lid env.constrs in
+        let c =
+          match args with
+          | None -> CUnit
+          | Some args ->
+            let c, ty_opt = translate_const env args in
+            begin match ty_opt with
+              | None -> ()
+              | Some ty ->
+                if ty <> tya then
+                  error_loc exp.pexp_loc
+                    ("wrong type for argument of constructor "^lid)
+            end;
+            c
+        in
+        let ty = StringMap.find ty_name env.types in
+        CConstr (lid, c), Some ty
+      with Not_found -> raise NotAConstant
+    end
+
+  | { pexp_desc = Pexp_record (lab_x_exp_list, None) } ->
+    let lab_x_exp_list =
+      List.map (function
+            ({ txt = Lident label; loc }, exp) ->
+            let c, ty_opt = translate_const env exp in
+            begin match ty_opt with
+            | None -> ()
+            | Some ty ->
+              let _, _, ty' = StringMap.find label env.labels in
+              if ty <> ty' then
+                error_loc loc ("wrong type for label "^label)
+            end;
+            label, c
+          | ( { loc }, _) ->
+            error_loc loc "label expected"
+        ) lab_x_exp_list in
+    let ty = match lab_x_exp_list with
+      | [] -> error_loc exp.pexp_loc "empty record"
+      | (label, _) :: _ ->
+        try
+          let ty_name, _, _ = StringMap.find label env.labels in
+          StringMap.find ty_name env.types
+        with Not_found -> error_loc exp.pexp_loc ("unknown label " ^ label)
+    in
+    CRecord lab_x_exp_list, Some ty
 
   | { pexp_desc = Pexp_constraint (cst, ty) } ->
      let cst, tyo = translate_const env cst in
-     let ty = translate_type env ty in
+     let ty = translate_type env ?expected:tyo ty in
      begin
        let loc = loc_of_loc exp.pexp_loc in
        match tyo with
@@ -371,7 +475,8 @@ and translate_pair exp =
   | Pexp_tuple [e1; e2] -> (e1, e2)
   | _ -> error_loc exp.pexp_loc "pair expected"
 
-let mk desc = { desc; ty = (); bv = StringSet.empty; fail = false }
+
+let mk desc = mk desc ()
 
 let vars_info_pat env pat =
   let rec vars_info_pat_aux acc indexes = function
@@ -655,7 +760,7 @@ from the head element. We use unit for that type. *)
                               | None -> mk (Const (Tunit, CUnit))
                               | Some arg -> translate_code env arg )
                with Not_found ->
-                 error_loc exp.pexp_loc "unknown constructor"
+                 error_loc exp.pexp_loc ("unknown constructor : " ^ lid)
              end
 
           | { pexp_desc =
@@ -826,6 +931,17 @@ let rec translate_head env ext_funs head_exp args =
         Pexp_fun (
             Nolabel, None,
             { ppat_desc =
+                Ppat_extension ({ txt = "invariant"},
+                                PStr [{ pstr_desc = Pstr_eval (exp, [])}])
+            },
+            head_exp) } ->
+    Format.eprintf "invariant@.";
+     translate_head env ext_funs head_exp args
+
+  | { pexp_desc =
+        Pexp_fun (
+            Nolabel, None,
+            { ppat_desc =
                 Ppat_constraint(
                     { ppat_desc =
                         Ppat_var { txt } },
@@ -845,50 +961,37 @@ let rec translate_head env ext_funs head_exp args =
      }
 
 let translate_record ty_name labels env =
-  let map = ref StringMap.empty in
-  let tys = List.mapi
-             (fun i pld ->
-               let label = pld.pld_name.txt in
-               if StringMap.mem label env.labels then
-                 error_loc pld.pld_loc "label already defined";
+  let rtys = List.mapi
+      (fun i pld ->
+         let label = pld.pld_name.txt in
+         if StringMap.mem label env.labels then
+           error_loc pld.pld_loc "label already defined";
 
-               let ty = translate_type env pld.pld_type in
-               env.labels <- StringMap.add label (ty_name, i, ty) env.labels;
-               map := StringMap.add label i !map;
-               ty) labels
+         let ty = translate_type env pld.pld_type in
+         env.labels <- StringMap.add label (ty_name, i, ty) env.labels;
+         label, ty) labels
   in
-  let ty = Ttuple tys in
-  env.types <- StringMap.add ty_name (ty, Type_record (tys,!map)) env.types
+  let ty = Trecord (ty_name, rtys) in
+  env.types <- StringMap.add ty_name ty env.types
 
 let translate_variant ty_name constrs env =
-
   let constrs = List.map
-             (fun pcd ->
-               let constr = pcd.pcd_name.txt in
-               if StringMap.mem constr env.constrs then
-                 error_loc pcd.pcd_loc "constructor already defined";
+      (fun pcd ->
+         let constr = pcd.pcd_name.txt in
+         if StringMap.mem constr env.constrs then
+           error_loc pcd.pcd_loc "constructor already defined";
 
-               let ty = match pcd.pcd_args with
-                 | Pcstr_tuple [ ty ] -> translate_type env ty
-                 | Pcstr_tuple [] -> Tunit
-                 | Pcstr_tuple tys -> Ttuple (List.map (translate_type env) tys)
-                 | Pcstr_record _ -> error_loc pcd.pcd_loc "syntax error"
-               in
-               env.constrs <- StringMap.add constr (ty_name, ty) env.constrs;
-               constr, ty) constrs
+         let ty = match pcd.pcd_args with
+           | Pcstr_tuple [ ty ] -> translate_type env ty
+           | Pcstr_tuple [] -> Tunit
+           | Pcstr_tuple tys -> Ttuple (List.map (translate_type env) tys)
+           | Pcstr_record _ -> error_loc pcd.pcd_loc "syntax error"
+         in
+         env.constrs <- StringMap.add constr (ty_name, ty) env.constrs;
+         constr, ty) constrs
   in
-
-  let rec iter constrs =
-    match constrs with
-    | [] -> assert false
-    | [ constr, ty ] -> ty, [constr, ty, ty, ty]
-    | (constr, left_ty) :: constrs ->
-       let right_ty, right_constrs = iter constrs in
-       let ty = Tor (left_ty, right_ty) in
-       ty, (constr, ty, left_ty, right_ty) :: right_constrs
-  in
-  let ty, constrs = iter constrs in
-  env.types <- StringMap.add ty_name (ty, Type_variant constrs) env.types
+  let ty = Tsum (ty_name, constrs) in
+  env.types <- StringMap.add ty_name ty env.types
 
 let check_version = function
   | { pexp_desc = Pexp_constant (Pconst_float (s, None)); pexp_loc } ->
@@ -981,7 +1084,7 @@ let rec translate_structure funs env ast =
                                }
     ]) } :: ast ->
     let ty = translate_type env ct in
-    env.types <- StringMap.add ty_name (ty, Type_alias) env.types;
+    env.types <- StringMap.add ty_name ty env.types;
     translate_structure funs env ast
 
   | [] ->
@@ -1001,9 +1104,9 @@ let predefined_constructors =
                    "None", ("'a option", Tunit);
                    "::", ("'a list", Tunit);
                    "[]", ("'a list", Tunit);
-                   "Left", ("'a variant", Tunit);
-                   "Right", ("'a variant", Tunit);
-                   "Source", ("'a contract", Tunit);
+                   "Left", ("('a, 'b) variant", Tunit);
+                   "Right", ("('a, 'b) variant", Tunit);
+                   "Source", ("('a, 'b) contract", Tunit);
                  ]
 
 let predefined_types =
@@ -1012,18 +1115,20 @@ let predefined_types =
                  (* Enter predefined types with dummy-info to prevent
  the user from overriding them *)
                  [
-                   "int", (Tunit, Type_variant []);
-                   "unit", (Tunit, Type_variant []);
-                   "bool", (Tunit, Type_variant []);
-                   "nat", (Tunit, Type_variant []);
-                   "tez", (Tunit, Type_variant []);
-                   "string", (Tunit, Type_variant []);
-                   "key", (Tunit, Type_variant []);
-                   "signature", (Tunit, Type_variant []);
-                   "option", (Tunit, Type_variant []);
-                   "list", (Tunit, Type_variant []);
-                   "map", (Tunit, Type_variant []);
-                   "set", (Tunit, Type_variant []);
+                   "int", Tunit;
+                   "unit", Tunit;
+                   "bool", Tunit;
+                   "nat", Tunit;
+                   "tez", Tunit;
+                   "string", Tunit;
+                   "key", Tunit;
+                   "signature", Tunit;
+                   "option", Tunit;
+                   "list", Tunit;
+                   "map", Tunit;
+                   "set", Tunit;
+                   "variant", Tunit;
+                   "contract", Tunit;
                  ]
 
 let initial_env filename =
