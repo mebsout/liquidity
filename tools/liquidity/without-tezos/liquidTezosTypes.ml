@@ -7,8 +7,6 @@
 (*                                                                        *)
 (**************************************************************************)
 
-open LiquidTypes
-
-val convert_contract : pre_michelson contract -> Script_repr.code
-
-val string_of_contract : Tezos_context.Script.code -> string
+type loc_table = unit
+type contract = LiquidTypes.michelson_exp LiquidTypes.contract
+type hash

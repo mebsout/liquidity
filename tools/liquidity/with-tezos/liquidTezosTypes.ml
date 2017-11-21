@@ -7,9 +7,10 @@
 (*                                                                        *)
 (**************************************************************************)
 
-open LiquidTypes
+type contract = string Micheline.canonical list
 
-exception Missing_program_field of string
+type loc_table = (int * LiquidTypes.location) list
 
-let convert_contract loc_table string = assert false (* NOT IMPLEMENTED *)
-let contract_of_string filename string = assert false (* NOT IMPLEMENTED *)
+type hash = Hash.Operation_hash.t
+
+exception ParseError of Error_monad.error
