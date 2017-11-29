@@ -3,11 +3,11 @@
 # Travis CI is done on Ubuntu trusty
 
 sudo apt-get update -qq
-sudo apt-get install -y -qq libgmp-dev # ocaml ocaml-native-compilers 
+sudo apt-get install -y -qq libgmp-dev # ocaml ocaml-native-compilers
+sudo apt-get install -qq -yy libev-dev libleveldb-dev libsnappy-dev
 
 # do this in a second step to only install libsecp256k1-dev libsecp256k1-0
 # for ubuntu, these packages are not available in trusty
 sudo add-apt-repository "deb http://cz.archive.ubuntu.com/ubuntu artful main universe"
 sudo apt-get update -qq
-sudo apt-get install -y -qq libsecp256k1-dev libsecp256k1-0
- 
+sudo apt-get install -y -qq libsecp256k1-dev libsecp256k1-0 libsodium-dev

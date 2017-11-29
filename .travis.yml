@@ -5,6 +5,11 @@ dist: trusty
 language: ocaml
 sudo: required
 
+cache:
+  directories:
+  - $HOME/.opam
+#  - tezos
+
 before_install:
 - sh travis-scripts/prepare-trusty.sh
 
@@ -13,12 +18,14 @@ install:
 
 script:
 - export OPAMYES=1
+- opam switch "tezos" --alias-of 4.04.2
+- eval `opam config env`
+- make clone-tezos # || (cd tezos; git pull; cd ..)
+- cp misc/merguez.sh tezos/
+- pushd . ; cd tezos; make build-deps && opam install cohttp-lwt-unix conduit-lwt-unix && (make || jbuilder external-lib-deps --missing --dev tezos.install) && ./merguez.sh; popd
 - opam sw 4.05.0
 - eval `opam config env`
-- make clone-tezos
 - make
 - make tests-mini
 - make tests
 - make rev-tests
-
-# TODO > how to compile and test with tezos (I.e. with a fully compiled version of tezos)?
