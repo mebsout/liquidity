@@ -5,3 +5,9 @@
 [submodule "libs/ezcmd"]
 	path = libs/ezcmd
 	url = https://github.com/OCamlPro/ezcmd.git
+[submodule "libs/ocplib-ezjsonm-js"]
+	path = libs/ocplib-ezjsonm-js
+	url = http://gitlab.ocamlpro.com/OCamlPro/ocplib-ezjsonm-js.git
+[submodule "libs/ocp-libsoduim-js"]
+	path = libs/ocp-libsoduim-js
+	url = http://gitlab.ocamlpro.com/OCamlPro/ocp-libsodium-js.git

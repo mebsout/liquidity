@@ -23,6 +23,8 @@
 
 (* Bindings to https://github.com/dcposch/blakejs *)
 
+open Js_of_ocaml
+
 (* Same interface as Tezos' Blake2 *)
 module Blake2b : sig
   type t

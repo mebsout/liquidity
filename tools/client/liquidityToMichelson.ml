@@ -171,8 +171,8 @@ let global_types = ref []
 
 type compiled_init =
   | No_init
-  | Init_constant of Source.const
-  | Init_code of Source.contract * (string * Source.datatype) list
+  | Init_constant of Liquidity.const
+  | Init_code of Liquidity.contract * (string * Liquidity.datatype) list
 
 let compile_contract syntax_ast =
   let typed_ast = LiquidCheck.typecheck_contract
