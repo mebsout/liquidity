@@ -10,3 +10,5 @@ _opam*
 /docs/sphinx/src/_extensions/__pycache__/
 /docs/sphinx/src/man/liquidity*
 /DEVEL
+/tools/liquidity-js/node_modules
+/tools/liquidity-js/package-lock.json

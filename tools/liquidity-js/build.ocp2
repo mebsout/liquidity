@@ -7,8 +7,21 @@ camlp4_js = [
 
 files = [
   "liquidity_js_michelson.ml";
+  "lwt_request.ml", { pp = camlp4_js };
   "liquidity_js.ml", { pp = camlp4_js };
 ];
+
+(* OCaml.library(
+ *   "js-libraries-check",
+ *   ocaml + {
+ *     files = [
+ *       "js_libraries_check.ml", { pp = camlp4_js };
+ *     ];
+ *     requires = [
+ *       "js_of_ocaml"
+ *     ];
+ *   }
+ * ); *)
 
 OCaml.program(
   "liquidity-js",
@@ -16,8 +29,10 @@ OCaml.program(
     requires = [
       "ocplib-liquidity-to-michelson-client";
       "js_of_ocaml";
+      "js_of_ocaml-lwt";
     ];
     files = files;
+    has_asm = false;
     build_rules = [
       "%{liquidity-js_FULL_DST_DIR}%/liquidity-js.js", {
         build_target = true;
@@ -30,8 +45,8 @@ OCaml.program(
               (* "--opt=3"; *)
               (* "--pretty"; "--no-inline"; "--debug-info"; *)
               "+weak.js";
-              "+dynlink.js";
-              "+toplevel.js";
+              (* "+dynlink.js";
+               * "+toplevel.js"; *)
               "+bigarray.js";
               "+nat.js";
               "+cstruct/cstruct.js";

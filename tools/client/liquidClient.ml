@@ -44,6 +44,8 @@ module Make
       | Error _ ->
         failwith "Bad private key: must be an Ed25519, \
                   base58-check encoded private key of the form edsk..."
+      | exception exc ->
+        failwith ("Bad private key: must be an Ed25519 " ^ Printexc.to_string exc)
 
   let get_public_key ?public_key () =
     match public_key, !LiquidOptions.public_key with
