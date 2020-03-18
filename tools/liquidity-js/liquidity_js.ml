@@ -24,7 +24,6 @@
 open Js_of_ocaml
 open Liquidity_js_michelson
 
-
 let failwith fmt = Format.kasprintf failwith fmt
 
 let js_failwith fmt =

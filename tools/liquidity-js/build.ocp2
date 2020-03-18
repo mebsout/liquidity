@@ -1,4 +1,6 @@
-for_javascript = true;
+if( ! for_javascript ) {
+    raise("Can only compile Javascript version when for_javascript = true", false);
+}
 
 camlp4_js = [
   "camlp4o";
